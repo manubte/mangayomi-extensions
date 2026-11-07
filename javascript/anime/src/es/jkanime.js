@@ -1,4 +1,4 @@
-// JKAnime JS | v777
+// JKAnime JS | v777 changes
 const mangayomiSources = [{
     "name": "JKAnime",
     "lang": "es",
