@@ -1,4 +1,4 @@
-// JKAnime JS | changedsearch
+// JKAnime JS | changedsearch2
 const mangayomiSources = [{
     "name": "JKAnime",
     "lang": "es",
@@ -72,7 +72,8 @@ class DefaultExtension extends MProvider {
             const a = item.selectFirst('h5 a') || item.selectFirst('a');
             if (!a) continue;
             const name = (a.text || '').trim();
-            const link = a.getHref;
+            // Quitar la barra final: si no, getDetail arma episodios como /slug//1 (404)
+            const link = (a.getHref || '').replace(/\/+$/, '');
             const pic = item.selectFirst('div.anime__item__pic');
             let imageUrl = pic ? pic.attr('data-setbg') : '';
             if (!imageUrl) {
@@ -124,6 +125,7 @@ class DefaultExtension extends MProvider {
         throw new Error(`[v3] busqueda sin resultados para "${query}" (HTTP ${res.statusCode})`);
     }
     async getDetail(url) {
+        url = (url || '').replace(/\/+$/, '');
         let res = await this.client.get(url);
         const doc = new Document(res.body);
         const detail = {};
@@ -165,7 +167,10 @@ class DefaultExtension extends MProvider {
         let promises = [];
         const videos = [];
         
-        const code = doc.selectFirst("script:contains(var video)").text;
+        // getVideoList recibe la URL de un EPISODIO (../slug/1/). Si le pasan la del anime, no hay video.
+        const script = doc.selectFirst("script:contains(var video)");
+        if (!script) return [];
+        const code = script.text;
 
         // extract direct video links
         for (const m of code.matchAll(/video\s*\[\d+\].*?src="(.*?)"/g)) {
@@ -387,11 +392,17 @@ async function vidGuardExtractor(url) {
     const res = await new Client().get(url);
     const doc = new Document(res.body);
     const script = doc.selectFirst('script:contains(eval)');
+    if (!script) return [];
 
-    // eval code
+    // eval code (pagina ajena: si el eval falla, no debe tumbar toda la lista)
     const code = script.text;
-    eval?.('var window = {};');
-    eval?.(code);
+    try {
+        eval?.('var window = {};');
+        eval?.(code);
+    } catch (e) {
+        return [];
+    }
+    if (!globalThis.window || !globalThis.window.svg) return [];
     const playlistUrl = globalThis.window.svg.stream;
 
     // decode sig
@@ -768,14 +779,26 @@ async function jwplayerExtractor(text, headers) {
 
     const videos = [], subtitles = [];
 
-    const data = eval('(' + (getsetup.exec(text) || getsetup.exec(unpacked))?.[1] + ')');
+    // eval sobre HTML ajeno: si el servidor devuelve una pagina distinta, no debe romper toda la lista
+    let data = null;
+    try {
+        const setup = getsetup.exec(text) || getsetup.exec(unpacked);
+        data = setup ? eval('(' + setup[1] + ')') : null;
+    } catch (e) {}
 
-    if (data){
-        var sources = data.sources;
-        var tracks = data.tracks;
+    let sources = [], tracks = [];
+    if (data) {
+        sources = data.sources || [];
+        tracks = data.tracks || [];
     } else {
-        var sources = eval('(' + (getsources.exec(text) || getsources.exec(unpacked))?.[1] + ')');
-        var tracks = eval('(' + (gettracks.exec(text) || gettracks.exec(unpacked))?.[1] + ')');
+        try {
+            const s = getsources.exec(text) || getsources.exec(unpacked);
+            sources = s ? eval('(' + s[1] + ')') : [];
+        } catch (e) {}
+        try {
+            const t = gettracks.exec(text) || gettracks.exec(unpacked);
+            tracks = t ? eval('(' + t[1] + ')') : [];
+        } catch (e) {}
     }
     for (t of tracks) {
         if (t.type == "captions") {
