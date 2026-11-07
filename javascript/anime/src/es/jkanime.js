@@ -1,4 +1,4 @@
-//parchev1
+//parchev2
 const mangayomiSources = [{
     "name": "JKAnime",
     "lang": "es",
@@ -18,15 +18,15 @@ class DefaultExtension extends MProvider {
         super();
         this.client = new Client();
     }
-getHeaders(url) {
+// PARCHE v3 para el jkanime.js de m2k3a
+// Reemplaza TODO el bloque que va desde "getHeaders" hasta el final de "search" (ambos incluidos),
+// o sea, hasta justo antes de "async getDetail(url)". No toques getDetail, getVideoList, filtros ni helpers.
+    getHeaders(url) {
         return { "Referer": this.source.baseUrl + "/" };
     }
-    async parseAnimeList(url, strict) {
-        const res = await this.client.get(url);
-        const body = res.body;
+    // Saca la lista de animes de un HTML (JSON incrustado) o de una respuesta JSON
+    extractList(body) {
         const list = [];
- 
-        // La lista viene como JSON incrustado en el HTML: {"id":123,"title":"...",...,"short_title":"..."}
         const re = /\{"id":\d+,"title".*?"short_title":"(?:[^"\\]|\\.)*"\}/g;
         for (const element of body.matchAll(re)) {
             try {
@@ -38,10 +38,32 @@ getHeaders(url) {
                 });
             } catch (e) {}
         }
- 
+        if (list.length) return list;
+
+        try {
+            let data = JSON.parse(body);
+            if (!Array.isArray(data)) data = data.animes || data.data || data.results || [];
+            for (const d of data) {
+                if (d && d.slug && d.title) {
+                    list.push({
+                        name: d.title,
+                        imageUrl: d.image || d.poster || "",
+                        link: this.source.baseUrl + '/' + d.slug
+                    });
+                }
+            }
+        } catch (e) {}
+        return list;
+    }
+    async parseAnimeList(url, strict) {
+        const res = await this.client.get(url);
+        const body = res.body;
+        const list = this.extractList(body);
+
         if (strict && list.length === 0) {
             const t = body.match(/<title[^>]*>([^<]*)<\/title>/i);
-            throw new Error(`[parche v1] 0 animes. HTTP ${res.statusCode}, largo ${body.length}, titulo: ${t ? t[1] : '?'}, tiene short_title: ${body.includes('short_title')}`);
+            const texto = body.replace(/<script[\s\S]*?<\/script>/gi, ' ').replace(/<style[\s\S]*?<\/style>/gi, ' ').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().substring(0, 250);
+            throw new Error(`[parche v3] 0 animes. URL: ${url} | HTTP ${res.statusCode} | largo ${body.length} | titulo: ${t ? t[1] : '?'} | short_title: ${body.includes('short_title')} | texto: ${texto}`);
         }
         return { "list": list, "hasNextPage": list.length > 0 };
     }
@@ -59,28 +81,39 @@ getHeaders(url) {
         return await this.parseAnimeList(`${this.source.baseUrl}/directorio?p=${page}&estado=emision`, true);
     }
     async search(query, page, filters) {
-        query = query.trim().replaceAll(/\ +/g, "_");
+        query = (query || "").trim().replaceAll(/\ +/g, "_");
 
-        // Search sometimes failed because filters were empty. I experienced this mostly on android...
-        if (!filters || filters.length == 0) {
-            return this.parseAnimeList(`${this.source.baseUrl}/buscar/${query}/${page}/`);
-        } else if (query) {
-            var url = `${this.source.baseUrl}/buscar/${query}/${page}/`;
-            url += `?filtro=${filters[1].values[filters[1].state].value}`;
-            url += `&tipo=${filters[5].values[filters[5].state].value}`;
-            url += `&estado=${filters[6].values[filters[6].state].value}`;
-        } else {
-            var url = `${this.source.baseUrl}/directorio/${query}/${page}`;
-            url += `/${filters[1].values[filters[1].state].value}`;
-            url += `/${filters[2].values[filters[2].state].value}`;
-            url += `/${filters[3].values[filters[3].state].value}`;
-            url += `/${filters[4].values[filters[4].state].value}`;
-            url += `/${filters[5].values[filters[5].state].value}`;
-            url += `/${filters[6].values[filters[6].state].value}`;
-            url += `/${filters[7].values[filters[7].state].value}`;
-            url += `/${filters[8].values[filters[8].state].value}`;
-        }        
-        return await this.parseAnimeList(url);
+        // Sin texto: mostrar el directorio
+        if (!query) {
+            return await this.getPopular(page);
+        }
+
+        const base = this.source.baseUrl;
+        const q = encodeURIComponent(query);
+
+        // Se prueban varias URLs en orden hasta que una devuelva resultados.
+        // Si ninguna sirve, el error muestra el codigo HTTP de cada intento.
+        const candidates = [
+            `${base}/buscar/${q}/${page}/`,
+            `${base}/buscar/${q}/`,
+            `${base}/directorio?q=${q}&p=${page}`,
+            `${base}/ajax_search?q=${q}`
+        ];
+        const log = [];
+        for (const url of candidates) {
+            try {
+                const res = await this.client.get(url, { "Referer": base + "/", "X-Requested-With": "XMLHttpRequest" });
+                const list = this.extractList(res.body);
+                if (res.statusCode == 200 && list.length > 0) {
+                    return { "list": list, "hasNextPage": !url.includes('ajax_search') };
+                }
+                const extra = res.statusCode == 200 ? ` cuerpo: ${res.body.substring(0, 200).replace(/\s+/g, ' ')}` : '';
+                log.push(`HTTP ${res.statusCode}, ${list.length} animes, ${url}${extra}`);
+            } catch (e) {
+                log.push(`ERROR ${e}, ${url}`);
+            }
+        }
+        throw new Error(`[parche v3] busqueda sin resultados. Intentos: ${log.join(' || ')}`);
     }
     async getDetail(url) {
         let res = await this.client.get(url);
