@@ -1,4 +1,4 @@
-// JKAnime JS | v3 completo (m2k3a + parche: lista JSON, busqueda con varias URLs)
+// JKAnime JS | v4 completo (m2k3a + parche: lista JSON, busqueda con varias URLs)
 const mangayomiSources = [{
     "name": "JKAnime",
     "lang": "es",
