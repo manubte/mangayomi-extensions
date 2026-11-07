@@ -1,3 +1,4 @@
+//parchev1
 const mangayomiSources = [{
     "name": "JKAnime",
     "lang": "es",
@@ -17,26 +18,32 @@ class DefaultExtension extends MProvider {
         super();
         this.client = new Client();
     }
-    getHeaders(url) {
-        throw new Error("getHeaders not implemented");
+getHeaders(url) {
+        return { "Referer": this.source.baseUrl + "/" };
     }
-    async parseAnimeList(url) {
+    async parseAnimeList(url, strict) {
         const res = await this.client.get(url);
-        const doc = new Document(res.body);
-        const code = doc.selectFirst("script:contains(var animes)").text;
+        const body = res.body;
         const list = [];
-
-        for (const element of code.matchAll(/{.*?short_title.*?}/g)) {
-            const data = JSON.parse(element[0]);
-            const name = data.title;
-            const imageUrl = data.image;
-            const link = this.source.baseUrl + '/' + data.slug;
-            list.push({ name, imageUrl, link });
+ 
+        // La lista viene como JSON incrustado en el HTML: {"id":123,"title":"...",...,"short_title":"..."}
+        const re = /\{"id":\d+,"title".*?"short_title":"(?:[^"\\]|\\.)*"\}/g;
+        for (const element of body.matchAll(re)) {
+            try {
+                const data = JSON.parse(element[0]);
+                list.push({
+                    name: data.title,
+                    imageUrl: data.image,
+                    link: this.source.baseUrl + '/' + data.slug
+                });
+            } catch (e) {}
         }
-        
-        const nextBtn = doc.selectFirst("a.nav-next");
-        const hasNextPage = nextBtn && nextBtn.text != '';
-        return { "list": list, "hasNextPage": hasNextPage };
+ 
+        if (strict && list.length === 0) {
+            const t = body.match(/<title[^>]*>([^<]*)<\/title>/i);
+            throw new Error(`[parche v1] 0 animes. HTTP ${res.statusCode}, largo ${body.length}, titulo: ${t ? t[1] : '?'}, tiene short_title: ${body.includes('short_title')}`);
+        }
+        return { "list": list, "hasNextPage": list.length > 0 };
     }
     statusFromString(status) {
         return {
@@ -46,22 +53,10 @@ class DefaultExtension extends MProvider {
         }[status] ?? 5;
     }
     async getPopular(page) {
-        const res = await this.client.get('https://jkanime.net/top/');
-        const doc = new Document(res.body);
-        const list = [];
-
-        for (const i of doc.select('div#conb')) {
-            const name = i.selectFirst('h2 a').text;
-            const imageUrl = i.selectFirst('img').getSrc;
-            let link = i.selectFirst('a').getHref;
-            link = link.endsWith('/') ? link.slice(0, -1) : link;
-            list.push({ name, imageUrl, link });
-        }
-
-        return { "list": list, "hasNextPage": false };
+        return await this.parseAnimeList(`${this.source.baseUrl}/directorio?p=${page}`, true);
     }
     async getLatestUpdates(page) {
-        return await this.parseAnimeList(`${this.source.baseUrl}/directorio/${page}/`);
+        return await this.parseAnimeList(`${this.source.baseUrl}/directorio?p=${page}&estado=emision`, true);
     }
     async search(query, page, filters) {
         query = query.trim().replaceAll(/\ +/g, "_");
