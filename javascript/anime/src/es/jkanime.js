@@ -1,4 +1,4 @@
-// JKAnime JS | changedsearch2
+// JKAnime JS | changedsearch4
 const mangayomiSources = [{
     "name": "JKAnime",
     "lang": "es",
@@ -127,11 +127,12 @@ class DefaultExtension extends MProvider {
     async getDetail(url) {
         url = (url || '').replace(/\/+$/, '');
         let res = await this.client.get(url);
-        const doc = new Document(res.body);
+        const body = res.body;
+        const doc = new Document(body);
         const detail = {};
 
-        const id = res.body.match(/data-anime="(\d+)"/)[1];
-        const lastEpisodeUrl = `${this.source.baseUrl}/ajax/last_episode/${id}`;
+        const id = body.match(/data-anime="(\d+)"/)[1];
+        const csrf = (body.match(/name="csrf-token"\s+content="([^"]+)"/) || [])[1] || '';
 
         const info = doc.selectFirst("div.anime__details__content");
         const extInfo = doc.selectFirst('div.aninfo');
@@ -142,10 +143,37 @@ class DefaultExtension extends MProvider {
         detail.genre = extInfo.select("li:contains(Genero) a").map(e => e.text);
         detail.author = extInfo.select("li:contains(Studios) a").map(e => e.text).join(', ');
 
-        // get episodes
+        // Episodios: POST /ajax/episodes/<id>/<pag> con _token + cookie de sesion.
+        // El viejo /ajax/last_episode/<id> ahora devuelve 404 (HTML), por eso JSON.parse fallaba.
         detail.episodes = [];
-        res = await this.client.get(lastEpisodeUrl, {'User-Agent': 'Mangayomi'});
-        const end = parseInt(JSON.parse(res.body)[0].number);
+        const getHeader = (name) => {
+            const hs = res.headers || {};
+            for (const k of Object.keys(hs)) {
+                if (k.toLowerCase() === name) return hs[k];
+            }
+            return '';
+        };
+        const setCookie = getHeader('set-cookie');
+        const pickCookie = (name) => {
+            const m = setCookie.match(new RegExp('(?:^|[,;]\\s*)' + name + '=([^;,]*)'));
+            return m ? name + '=' + m[1] : null;
+        };
+        const cookie = ['XSRF-TOKEN', 'laravel_session'].map(pickCookie).filter(Boolean).join('; ');
+
+        const epHeaders = {
+            'Referer': url + '/',
+            'X-Requested-With': 'XMLHttpRequest',
+            'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'
+        };
+        if (cookie) epHeaders['Cookie'] = cookie;
+
+        let end = 0;
+        try {
+            res = await this.client.post(`${this.source.baseUrl}/ajax/episodes/${id}/1`, epHeaders, { '_token': csrf });
+            const payload = JSON.parse(res.body);
+            end = parseInt(payload.total || (payload.data ? payload.data.length : 0)) || 0;
+        } catch (e) {}
+
         for (let i = 1; i <= end; i++) {
             detail.episodes.push({
                 name: 'Episodio ' + i,
