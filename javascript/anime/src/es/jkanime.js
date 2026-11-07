@@ -1,4 +1,4 @@
-// JKAnime JS | v777 changes
+// JKAnime JS | changedsearch
 const mangayomiSources = [{
     "name": "JKAnime",
     "lang": "es",
@@ -64,6 +64,25 @@ class DefaultExtension extends MProvider {
         }
         return { "list": list, "hasNextPage": list.length > 0 };
     }
+    // Los resultados de /buscar/<query>/ vienen en HTML (div.anime__item), no en el JSON de short_title
+    extractSearchList(body) {
+        const list = [];
+        const doc = new Document(body);
+        for (const item of doc.select('div.anime__item')) {
+            const a = item.selectFirst('h5 a') || item.selectFirst('a');
+            if (!a) continue;
+            const name = (a.text || '').trim();
+            const link = a.getHref;
+            const pic = item.selectFirst('div.anime__item__pic');
+            let imageUrl = pic ? pic.attr('data-setbg') : '';
+            if (!imageUrl) {
+                const img = item.selectFirst('img');
+                imageUrl = img ? img.getSrc : '';
+            }
+            if (name && link) list.push({ name, imageUrl, link });
+        }
+        return list;
+    }
     statusFromString(status) {
         return {
             "En emision": 0,
@@ -88,28 +107,21 @@ class DefaultExtension extends MProvider {
         const base = this.source.baseUrl;
         const q = encodeURIComponent(query);
 
-        // Se prueban varias URLs en orden hasta que una devuelva resultados.
-        const candidates = [
-            `${base}/buscar/${q}/${page}/`,
-            `${base}/buscar/${q}/`,
-            `${base}/directorio?q=${q}&p=${page}`,
-            `${base}/ajax_search?q=${q}`
-        ];
-        const log = [];
-        for (const url of candidates) {
-            try {
-                const res = await this.client.get(url, { "Referer": base + "/", "X-Requested-With": "XMLHttpRequest" });
-                const list = this.extractList(res.body);
-                if (res.statusCode == 200 && list.length > 0) {
-                    return { "list": list, "hasNextPage": !url.includes('ajax_search') };
-                }
-                const extra = res.statusCode == 200 ? ` cuerpo: ${res.body.substring(0, 200).replace(/\s+/g, ' ')}` : '';
-                log.push(`HTTP ${res.statusCode}, ${list.length} animes, ${url}${extra}`);
-            } catch (e) {
-                log.push(`ERROR ${e}, ${url}`);
-            }
+        // La busqueda de JKAnime es de una sola pagina y devuelve HTML (div.anime__item).
+        // /directorio?q= ignora la query (devolvia lo mismo que getPopular) y /ajax_search da 404.
+        const res = await this.client.get(`${base}/buscar/${q}/`, {
+            "Referer": base + "/",
+            "X-Requested-With": "XMLHttpRequest"
+        });
+
+        let list = this.extractSearchList(res.body);
+        if (list.length === 0) list = this.extractList(res.body);
+
+        if (list.length > 0) {
+            return { "list": list, "hasNextPage": false };
         }
-        throw new Error(`[v3] busqueda sin resultados. Intentos: ${log.join(' || ')}`);
+
+        throw new Error(`[v3] busqueda sin resultados para "${query}" (HTTP ${res.statusCode})`);
     }
     async getDetail(url) {
         let res = await this.client.get(url);
