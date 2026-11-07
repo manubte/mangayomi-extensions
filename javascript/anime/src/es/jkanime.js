@@ -1,4 +1,4 @@
-//parchev2
+// JKAnime JS | v3 completo (m2k3a + parche: lista JSON, busqueda con varias URLs)
 const mangayomiSources = [{
     "name": "JKAnime",
     "lang": "es",
@@ -7,7 +7,7 @@ const mangayomiSources = [{
     "iconUrl": "https://cdn.jkanime.net/logo_jk.png",
     "typeSource": "single",
     "itemType": 1,
-    "version": "0.1.13",
+    "version": "0.1.14",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "anime/src/es/jkanime.js"
@@ -18,9 +18,6 @@ class DefaultExtension extends MProvider {
         super();
         this.client = new Client();
     }
-// PARCHE v3 para el jkanime.js de m2k3a
-// Reemplaza TODO el bloque que va desde "getHeaders" hasta el final de "search" (ambos incluidos),
-// o sea, hasta justo antes de "async getDetail(url)". No toques getDetail, getVideoList, filtros ni helpers.
     getHeaders(url) {
         return { "Referer": this.source.baseUrl + "/" };
     }
@@ -63,7 +60,7 @@ class DefaultExtension extends MProvider {
         if (strict && list.length === 0) {
             const t = body.match(/<title[^>]*>([^<]*)<\/title>/i);
             const texto = body.replace(/<script[\s\S]*?<\/script>/gi, ' ').replace(/<style[\s\S]*?<\/style>/gi, ' ').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().substring(0, 250);
-            throw new Error(`[parche v3] 0 animes. URL: ${url} | HTTP ${res.statusCode} | largo ${body.length} | titulo: ${t ? t[1] : '?'} | short_title: ${body.includes('short_title')} | texto: ${texto}`);
+            throw new Error(`[v3] 0 animes. URL: ${url} | HTTP ${res.statusCode} | largo ${body.length} | titulo: ${t ? t[1] : '?'} | short_title: ${body.includes('short_title')} | texto: ${texto}`);
         }
         return { "list": list, "hasNextPage": list.length > 0 };
     }
@@ -92,7 +89,6 @@ class DefaultExtension extends MProvider {
         const q = encodeURIComponent(query);
 
         // Se prueban varias URLs en orden hasta que una devuelva resultados.
-        // Si ninguna sirve, el error muestra el codigo HTTP de cada intento.
         const candidates = [
             `${base}/buscar/${q}/${page}/`,
             `${base}/buscar/${q}/`,
@@ -113,7 +109,7 @@ class DefaultExtension extends MProvider {
                 log.push(`ERROR ${e}, ${url}`);
             }
         }
-        throw new Error(`[parche v3] busqueda sin resultados. Intentos: ${log.join(' || ')}`);
+        throw new Error(`[v3] busqueda sin resultados. Intentos: ${log.join(' || ')}`);
     }
     async getDetail(url) {
         let res = await this.client.get(url);
@@ -179,6 +175,8 @@ class DefaultExtension extends MProvider {
         return sortVideos(videos);
     }
     getFilterList() {
+        const years = [["Año", "Año"]];
+        for (let y = 2026; y >= 1981; y--) years.push([String(y), String(y)]);
         return [
             {
                 type_name: "HeaderFilter",
@@ -300,53 +298,7 @@ class DefaultExtension extends MProvider {
                 type: "ano",
                 name: "Año",
                 state: 0,
-                values: [
-                    ["Año", "Año"],
-                    ["2024", "2024"],
-                    ["2023", "2023"],
-                    ["2022", "2022"],
-                    ["2021", "2021"],
-                    ["2020", "2020"],
-                    ["2019", "2019"],
-                    ["2018", "2018"],
-                    ["2017", "2017"],
-                    ["2016", "2016"],
-                    ["2015", "2015"],
-                    ["2014", "2014"],
-                    ["2013", "2013"],
-                    ["2012", "2012"],
-                    ["2011", "2011"],
-                    ["2010", "2010"],
-                    ["2009", "2009"],
-                    ["2008", "2008"],
-                    ["2007", "2007"],
-                    ["2006", "2006"],
-                    ["2005", "2005"],
-                    ["2004", "2004"],
-                    ["2003", "2003"],
-                    ["2002", "2002"],
-                    ["2001", "2001"],
-                    ["2000", "2000"],
-                    ["1999", "1999"],
-                    ["1998", "1998"],
-                    ["1997", "1997"],
-                    ["1996", "1996"],
-                    ["1995", "1995"],
-                    ["1994", "1994"],
-                    ["1993", "1993"],
-                    ["1992", "1992"],
-                    ["1991", "1991"],
-                    ["1990", "1990"],
-                    ["1989", "1989"],
-                    ["1988", "1988"],
-                    ["1987", "1987"],
-                    ["1986", "1986"],
-                    ["1985", "1985"],
-                    ["1984", "1984"],
-                    ["1983", "1983"],
-                    ["1982", "1982"],
-                    ["1981", "1981"]
-                ].map(x => ({ type_name: 'SelectOption', name: x[0], value: x[1] }))
+                values: years.map(x => ({ type_name: 'SelectOption', name: x[0], value: x[1] }))
             },
             {
                 type_name: "SelectFilter",
@@ -414,64 +366,8 @@ class DefaultExtension extends MProvider {
     }
 }
 
-/***************************************************************************************************
-* 
-*   mangayomi-js-helpers v1.2
-*       
-*   # Video Extractors
-*       - vidGuardExtractor
-*       - doodExtractor
-*       - vidozaExtractor
-*       - okruExtractor
-*       - amazonExtractor
-*       - vidHideExtractor
-*       - filemoonExtractor
-*       - mixdropExtractor
-*       - speedfilesExtractor
-*       - luluvdoExtractor
-*       - burstcloudExtractor (not working, see description)
-*   
-*   # Video Extractor Wrappers
-*       - streamWishExtractor
-*       - voeExtractor
-*       - mp4UploadExtractor
-*       - yourUploadExtractor
-*       - streamTapeExtractor
-*       - sendVidExtractor
-*   
-*   # Video Extractor helpers
-*       - extractAny
-*   
-*   # Playlist Extractors
-*       - m3u8Extractor
-*       - jwplayerExtractor
-*   
-*   # Extension Helpers
-*       - sortVideos()
-*   
-*   # Uint8Array
-*       - Uint8Array.fromBase64()
-*       - Uint8Array.prototype.toBase64()
-*       - Uint8Array.prototype.decode()
-*   
-*   # String
-*       - String.prototype.encode()
-*       - String.decode()
-*       - String.prototype.reverse()
-*       - String.prototype.swapcase()
-*       - getRandomString()
-*
-*   # Encode/Decode Functions
-*       - decodeUTF8
-*       - encodeUTF8
-*   
-*   # Url
-*       - absUrl()
-*
-***************************************************************************************************/
-
 //--------------------------------------------------------------------------------------------------
-//  Video Extractors
+//  Helpers (mangayomi-js-helpers v1.2, sin cambios)
 //--------------------------------------------------------------------------------------------------
 
 async function vidGuardExtractor(url) {
@@ -752,9 +648,6 @@ extractAny.methods = {
 //--------------------------------------------------------------------------------------------------
 
 async function m3u8Extractor(url, headers = null) {
-    // https://developer.apple.com/documentation/http-live-streaming/creating-a-multivariant-playlist
-    // https://developer.apple.com/documentation/http-live-streaming/adding-alternate-media-to-a-playlist
-    // define attribute lists
     const streamAttributes = [
         ['avg_bandwidth', /AVERAGE-BANDWIDTH=(\d+)/],
         ['bandwidth', /\bBANDWIDTH=(\d+)/],
@@ -932,7 +825,6 @@ function sortVideos(videos) {
 //--------------------------------------------------------------------------------------------------
 
 Uint8Array.fromBase64 = function (b64) {
-    //        [00,01,02,03,04,05,06,07,08,\t,\n,0b,0c,\r,0e,0f,10,11,12,13,14,15,16,17,18,19,1a,1b,1c,1d,1e,1f,' ', !, ", #, $, %, &, ', (, ), *, +,',', -, ., /, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, :, ;, <,'=', >, ?, @,A,B,C,D,E,F,G,H,I,J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y, Z, [, \, ], ^, _, `, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, v, w, x, y, z, {, |, }, ~,7f]
     const m = [-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 62, -1, 62, -1, 63, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, -1, -1, -1, -1, -1, -1, -1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, -1, -1, -1, -1, 63, -1, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, -1, -1, -1, -1, -1]
     let data = [], val = 0, bits = -8
     for (const c of b64) {
